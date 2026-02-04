@@ -3,7 +3,7 @@
     <nav class="nav">
       <div class="brand">Home Financial</div>
       <div class="nav-actions">
-        <router-link class="btn secondary" to="/auth">Log In</router-link>
+        <router-link class="btn secondary" to="/auth?mode=login">Log In</router-link>
         <router-link class="btn" to="/auth">Get Started</router-link>
       </div>
     </nav>

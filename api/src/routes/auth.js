@@ -53,14 +53,15 @@ authRouter.post('/register', async (req, res) => {
     return res.status(400).json({ error: 'invalid_request', details: parsed.error.flatten() });
   }
 
-  const { email, password, full_name, household_name } = parsed.data;
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const { password, full_name, household_name } = parsed.data;
   const passwordHash = await bcrypt.hash(password, 12);
 
   const client = await pool.connect();
   try {
     await client.query('begin');
 
-    const existing = await client.query('select id from users where email = $1', [email]);
+    const existing = await client.query('select id from users where email = $1', [normalizedEmail]);
     if (existing.rowCount > 0) {
       await client.query('rollback');
       return res.status(409).json({ error: 'email_exists' });
@@ -70,7 +71,7 @@ authRouter.post('/register', async (req, res) => {
       `insert into users (email, password_hash, full_name)
        values ($1, $2, $3)
        returning id, email, full_name, email_verified`,
-      [email, passwordHash, full_name || null]
+      [normalizedEmail, passwordHash, full_name || null]
     );
 
     let household = null;
@@ -97,14 +98,14 @@ authRouter.post('/register', async (req, res) => {
         await saveVerificationCode({
           client: codeClient,
           userId: userResult.rows[0].id,
-          email,
+          email: normalizedEmail,
           codeHash: hash,
         });
       } finally {
         codeClient.release();
       }
 
-      await sendVerificationCode({ to: email, code });
+      await sendVerificationCode({ to: normalizedEmail, code });
 
       return res.status(201).json({
         user: userResult.rows[0],
@@ -140,12 +141,13 @@ authRouter.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'invalid_request', details: parsed.error.flatten() });
   }
 
-  const { email, password } = parsed.data;
+  const { password } = parsed.data;
+  const normalizedEmail = parsed.data.email.toLowerCase();
   let result;
   try {
     result = await pool.query(
       'select id, email, full_name, password_hash, email_verified from users where email = $1',
-      [email]
+      [normalizedEmail]
     );
   } catch (err) {
     logger.error('login_query_error', { message: err.message, stack: err.stack });
@@ -191,21 +193,21 @@ authRouter.post('/request-email-code', async (req, res) => {
     return res.status(400).json({ error: 'invalid_request', details: parsed.error.flatten() });
   }
 
-  const { email } = parsed.data;
-  const userResult = await pool.query('select id from users where email = $1', [email]);
+  const normalizedEmail = parsed.data.email.toLowerCase();
+  const userResult = await pool.query('select id from users where email = $1', [normalizedEmail]);
   if (userResult.rowCount === 0) {
     return res.json({ status: 'ok' });
   }
 
   const { code, hash } = createCode();
   try {
-    await saveVerificationCode({
-      client: pool,
-      userId: userResult.rows[0].id,
-      email,
-      codeHash: hash,
-    });
-    await sendVerificationCode({ to: email, code });
+  await saveVerificationCode({
+    client: pool,
+    userId: userResult.rows[0].id,
+    email: normalizedEmail,
+    codeHash: hash,
+  });
+  await sendVerificationCode({ to: normalizedEmail, code });
   } catch (err) {
     logger.error('request_email_code_error', { message: err.message, stack: err.stack });
     return res.status(500).json({ error: 'server_error' });
@@ -223,10 +225,11 @@ authRouter.post('/verify-email-code', async (req, res) => {
     return res.status(400).json({ error: 'invalid_request', details: parsed.error.flatten() });
   }
 
-  const { email, code } = parsed.data;
+  const { code } = parsed.data;
+  const normalizedEmail = parsed.data.email.toLowerCase();
   let userResult;
   try {
-    userResult = await pool.query('select id, email from users where email = $1', [email]);
+    userResult = await pool.query('select id, email from users where email = $1', [normalizedEmail]);
   } catch (err) {
     logger.error('verify_email_user_query_error', { message: err.message, stack: err.stack });
     return res.status(500).json({ error: 'server_error' });
@@ -239,16 +242,16 @@ authRouter.post('/verify-email-code', async (req, res) => {
   let codeResult;
   try {
     codeResult = await pool.query(
-      `select id from email_verification_codes
-       where user_id = $1
-         and email = $2
-         and code_hash = $3
+    `select id from email_verification_codes
+     where user_id = $1
+       and email = $2
+       and code_hash = $3
          and used_at is null
          and expires_at > now()
        order by created_at desc
        limit 1`,
-      [userResult.rows[0].id, email, codeHash]
-    );
+    [userResult.rows[0].id, normalizedEmail, codeHash]
+  );
   } catch (err) {
     logger.error('verify_email_code_query_error', { message: err.message, stack: err.stack });
     return res.status(500).json({ error: 'server_error' });
@@ -272,7 +275,7 @@ authRouter.post('/verify-email-code', async (req, res) => {
 
   const token = signAccessToken({
     user_id: userResult.rows[0].id,
-    email,
+    email: normalizedEmail,
   });
 
   return res.json({ tokens: { access: token } });

@@ -23,15 +23,25 @@
         <label class="label">Password</label>
         <input v-model="password" class="input" type="password" placeholder="••••••••" required />
 
+        <div v-if="mode === 'register'">
+          <label class="label">Confirm Password</label>
+          <input v-model="confirmPassword" class="input" type="password" placeholder="••••••••" required />
+        </div>
+
         <div v-if="mode === 'register'" class="grid two">
           <div>
-            <label class="label">Full Name</label>
-            <input v-model="fullName" class="input" type="text" placeholder="Alex" />
+            <label class="label">First Name</label>
+            <input v-model="firstName" class="input" type="text" placeholder="Alex" />
           </div>
           <div>
-            <label class="label">Household Name</label>
-            <input v-model="householdName" class="input" type="text" placeholder="Home" />
+            <label class="label">Last Name</label>
+            <input v-model="lastName" class="input" type="text" placeholder="Johnson" />
           </div>
+        </div>
+
+        <div v-if="mode === 'register'">
+          <label class="label">Household Name</label>
+          <input v-model="householdName" class="input" type="text" placeholder="Home" />
         </div>
 
         <button class="btn" type="submit">
@@ -39,37 +49,57 @@
         </button>
       </form>
 
+      <div class="auth-actions">
+        <button class="btn secondary" type="button" @click="mode = 'login'">Log In</button>
+        <button class="btn secondary" type="button">Forgot Password</button>
+      </div>
+
       <p v-if="message" class="message">{{ message }}</p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { onMounted, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { api, setAccessToken } from '../lib/api.js';
 
 const router = useRouter();
+const route = useRoute();
 const mode = ref('register');
 const email = ref('');
 const password = ref('');
-const fullName = ref('');
+const confirmPassword = ref('');
+const firstName = ref('');
+const lastName = ref('');
 const householdName = ref('');
 const message = ref('');
+
+onMounted(() => {
+  if (route.query.mode === 'login') {
+    mode.value = 'login';
+  }
+});
 
 const handleSubmit = async () => {
   message.value = '';
   try {
+    const normalizedEmail = email.value.trim().toLowerCase();
     if (mode.value === 'register') {
+      if (password.value !== confirmPassword.value) {
+        message.value = 'Passwords do not match.';
+        return;
+      }
+      const fullName = `${firstName.value} ${lastName.value}`.trim();
       const response = await api.register({
-        email: email.value,
+        email: normalizedEmail,
         password: password.value,
-        full_name: fullName.value || undefined,
+        full_name: fullName || undefined,
         household_name: householdName.value || undefined,
       });
-      sessionStorage.setItem('fullName', fullName.value || '');
+      sessionStorage.setItem('fullName', fullName || '');
       sessionStorage.setItem('householdName', householdName.value || '');
-      sessionStorage.setItem('pendingEmail', email.value);
+      sessionStorage.setItem('pendingEmail', normalizedEmail);
       message.value = 'Check your email for a verification code.';
       if (response.tokens?.access) {
         setAccessToken(response.tokens.access);
@@ -78,9 +108,9 @@ const handleSubmit = async () => {
         router.push('/verify');
       }
     } else {
-      const response = await api.login({ email: email.value, password: password.value });
+      const response = await api.login({ email: normalizedEmail, password: password.value });
       if (response.requires_email_verification) {
-        sessionStorage.setItem('pendingEmail', email.value);
+        sessionStorage.setItem('pendingEmail', normalizedEmail);
         message.value = 'Please verify your email to continue.';
         router.push('/verify');
         return;
@@ -89,7 +119,7 @@ const handleSubmit = async () => {
       router.push('/dashboard');
     }
   } catch (err) {
-    message.value = err.message;
+    message.value = 'Unable to complete request. If you already have an account, try logging in.';
   }
 };
 </script>
@@ -137,11 +167,14 @@ const handleSubmit = async () => {
   border-radius: 999px;
   font-weight: 600;
   cursor: pointer;
+  color: #000;
+  opacity: 0.6;
 }
 
 .tab.active {
   background: var(--accent);
-  color: white;
+  color: #000;
+  opacity: 1;
 }
 
 .auth-form {
@@ -149,8 +182,20 @@ const handleSubmit = async () => {
   gap: 0.9rem;
 }
 
+.auth-form .btn {
+  font-family: 'Noto Serif', serif;
+  font-size: 1.05rem;
+}
+
 .message {
   margin-top: 1rem;
   color: var(--accent-2);
+}
+
+.auth-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  justify-content: center;
 }
 </style>
