@@ -1,0 +1,18 @@
+import { verifyAccessToken } from '../utils/jwt.js';
+
+export function requireAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const [scheme, token] = header.split(' ');
+
+  if (scheme !== 'Bearer' || !token) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  try {
+    const payload = verifyAccessToken(token);
+    req.user = payload;
+    return next();
+  } catch (err) {
+    return res.status(401).json({ error: 'invalid_token' });
+  }
+}
